@@ -50,11 +50,8 @@ data StepResult
     | StepSucceeded
     deriving (Eq, Show)
 
-newtype StepName = StepName Text
+newtype StepName = StepName { stepNameToText :: Text }
     deriving (Eq, Ord, Show)
-
-stepNameToText :: StepName -> Text
-stepNameToText (StepName step) = step
 
 exitCodeToStepResult :: Docker.ContainerExitCode -> StepResult
 exitCodeToStepResult exit =

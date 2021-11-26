@@ -5,17 +5,11 @@ import qualified Network.HTTP.Simple as HTTP
 import qualified Socket
 import RIO
 
-newtype Image = Image Text
+newtype Image = Image { imageToText :: Text }
     deriving (Eq, Show)
 
-newtype ContainerExitCode = ContainerExitCode Int
+newtype ContainerExitCode = ContainerExitCode { exitCodeToInt :: Int }
     deriving (Eq, Show)
-
-imageToText :: Image -> Text
-imageToText (Image image) = image
-
-exitCodeToInt :: ContainerExitCode -> Int
-exitCodeToInt (ContainerExitCode code) = code
 
 data CreateContainerOptions
     = CreateContainerOptions
@@ -31,7 +25,7 @@ createContainer options = do
                 [ ("Image", Aeson.toJSON image)
                 , ("Tty", Aeson.toJSON True)
                 , ("Labels", Aeson.object [("quad", "")])
-                , ("Cmd", "echo hello")
+                , ("Cmd", "uname -a")
                 , ("Entrypoint", Aeson.toJSON [Aeson.String "/bin/sh", "-c"])
                 ]
 
