@@ -1,6 +1,8 @@
 module Docker where
 
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson.Types
+import Data.Aeson ( (.:) )
 import qualified Network.HTTP.Simple as HTTP
 import qualified Socket
 import RIO
@@ -11,12 +13,15 @@ newtype Image = Image { imageToText :: Text }
 newtype ContainerExitCode = ContainerExitCode { exitCodeToInt :: Int }
     deriving (Eq, Show)
 
+newtype ContainerId = ContainerId { containerIdToText :: Text }
+    deriving (Eq, Show)
+
 data CreateContainerOptions
     = CreateContainerOptions
         { image :: Image
         }
 
-createContainer :: CreateContainerOptions -> IO ()
+createContainer :: CreateContainerOptions -> IO ContainerId
 createContainer options = do
     manager <- Socket.newManager "/var/run/docker.sock"
 
@@ -34,7 +39,32 @@ createContainer options = do
             & HTTP.setRequestPath "/v1.40/containers/create"
             & HTTP.setRequestMethod "POST"
             & HTTP.setRequestBodyJSON body
+    
+    let parser = Aeson.withObject "create-container" $ \o -> do
+            cId <- o .: "Id"
+            pure $ ContainerId cId
+
     res <- HTTP.httpBS req
-    traceShowIO res
+    parseResponse res parser
+
+parseResponse :: HTTP.Response ByteString -> (Aeson.Value -> Aeson.Types.Parser a) -> IO a
+parseResponse res parser = do
+    let result = do
+            value <- Aeson.eitherDecodeStrict (HTTP.getResponseBody res)
+            Aeson.Types.parseEither parser value
+    case result of
+        Left e -> throwString e
+        Right status -> pure status
 
 
+startContaineer :: ContainerId -> IO ()
+startContaineer container = do
+    manager <- Socket.newManager "/var/run/docker.sock"
+
+    let path = "/v1.40/containers/" <> containerIdToText container <> "/start"
+    
+    let req = HTTP.defaultRequest
+            & HTTP.setRequestManager manager
+            & HTTP.setRequestPath (encodeUtf8 path)
+            & HTTP.setRequestMethod "POST"
+    void $ HTTP.httpBS req
