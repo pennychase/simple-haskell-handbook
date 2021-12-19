@@ -9,6 +9,8 @@ import Test.Hspec
 import Core
 import qualified Docker
 import qualified Runner
+import GHC.Base (build)
+import Core (Build(completedSteps))
 
 
 main :: IO ()
@@ -21,10 +23,14 @@ main = hspec do
             testRunSuccess runner
         it "should run a build (failure)" do
             testRunFailure runner
+        it "should share a workspace between steps" do
+            testSharedWorkSpace docker runner
 
 cleanupDocker :: IO ()
 cleanupDocker = void do
-    Process.readProcessStdout "docker rm -f $(docker ps -aq --filter \"label=quad\")"
+    Process.readProcessStdout "docker rm -f `docker ps -aq --filter \"label=quad\"`"
+    Process.readProcessStdout "docker volume rm -f `docker volume ls -q --filter \"label=quad\"`" 
+
 
 -- Helper functions
 makeStep :: Text -> Text -> [Text] -> Step
@@ -52,9 +58,11 @@ testBuild = Build
     { pipeline = testPipeline
     , state = BuildReady
     , completedSteps = mempty
+    , volume = Docker.Volume ""
     }
 
 -- Tests
+
 
 testRunSuccess :: Runner.Service -> IO ()
 testRunSuccess runner = do
@@ -76,3 +84,13 @@ testRunFailure runner = do
 
     result.state `shouldBe` BuildFinished BuildFailed
     Map.elems result.completedSteps `shouldBe` [ StepFailed (Docker.ContainerExitCode 1) ]
+
+testSharedWorkSpace :: Docker.Service -> Runner.Service -> IO ()
+testSharedWorkSpace docker runner = do
+    build <- runner.prepareBuild $ makePipeline
+                [ makeStep "Create file" "ubuntu" ["echo hello > test"]
+                , makeStep "Read file" "ubuntu" ["cat test"]
+                ]
+    result <- runner.runBuild build
+    result.state `shouldBe` BuildFinished BuildSucceeded
+    Map.elems result.completedSteps `shouldBe` [StepSucceeded, StepSucceeded ]
