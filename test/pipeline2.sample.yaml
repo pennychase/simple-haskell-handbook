@@ -1,0 +1,10 @@
+steps:
+  - name: clone
+    image: ubuntu
+    commands:
+      - date 
+
+  - name: test
+    image: ubuntu
+    commands:
+      - uname -r

@@ -6,6 +6,7 @@ import qualified RIO.Map as Map
 import qualified RIO.NonEmpty as NonEmpty
 import qualified RIO.Text as Text
 import qualified Data.Time.Clock.POSIX as Time
+import qualified Data.Aeson as Aeson
 
 import qualified Docker
 
@@ -16,15 +17,15 @@ data Pipeline
     = Pipeline
         { steps :: NonEmpty Step
         }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, Aeson.FromJSON)
 
 data Step
     = Step
         { name :: StepName
-        , commands :: NonEmpty Text
+        , commands ::  NonEmpty Text
         , image :: Docker.Image
         }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, Aeson.FromJSON)
 
 data Build
     = Build
@@ -59,8 +60,11 @@ data StepResult
     | StepSucceeded
     deriving (Eq, Show)
 
-newtype StepName = StepName { stepNameToText :: Text }
-    deriving (Eq, Ord, Show)
+newtype StepName = StepName Text
+  deriving (Eq, Show, Ord, Generic, Aeson.FromJSON)
+
+stepNameToText :: StepName -> Text
+stepNameToText (StepName step) = step
 
 -- Data types for Logging
 
@@ -113,6 +117,7 @@ progress docker build =
                             , volume = build.volume
                             }
 
+                    docker.pullImage step.image
                     container <- docker.createContainer options
 
                     docker.startContainer container
@@ -139,6 +144,7 @@ progress docker build =
 
            
         BuildFinished _ -> pure build
+
 
 -- Logging
 

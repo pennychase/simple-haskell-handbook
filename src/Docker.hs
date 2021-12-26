@@ -7,12 +7,24 @@ import qualified Network.HTTP.Simple as HTTP
 import qualified Socket
 import qualified Data.Time.Clock.POSIX as Time
 import RIO
-import qualified Data.Time.Clock.POSIX as Time
+import qualified RIO.Text as Text
+import qualified RIO.Text.Partial as Text.Partial
 
 -- Data types for Dockewr services (containers, volumes, logs)
 
-newtype Image = Image { imageToText :: Text }
+data Image = Image { name :: Text
+                   , tag :: Text }
     deriving (Eq, Show)
+
+imageToText :: Image -> Text 
+imageToText image = image.name <> ":" <> image.tag
+
+instance Aeson.FromJSON Image where
+    parseJSON = Aeson.withText "parse-image" $ \image -> do
+        case Text.Partial.splitOn ":" image of
+            [name] -> pure $ Image { name = name, tag = "latest"}
+            [name, tag] -> pure $ Image { name = name, tag = tag }
+            _ -> fail $ "Image has too many colons " <> Text.unpack image
 
 newtype ContainerExitCode = ContainerExitCode { exitCodeToInt :: Int }
     deriving (Eq, Show)
@@ -32,6 +44,7 @@ data Service
         , containerStatus :: ContainerId -> IO ContainerStatus
         , createVolume :: IO Volume
         , fetchLogs :: FetchLogsOptions -> IO ByteString
+        , pullImage :: Image -> IO ()
         }
 
 data CreateContainerOptions
@@ -71,6 +84,7 @@ createService = do
         , containerStatus = containerStatus_ makeReq
         , createVolume = createVolume_ makeReq
         , fetchLogs = fetchLogs_ makeReq
+        , pullImage = pullImage_ makeReq
         }
 
 -- Parse responses from Docker service
@@ -124,7 +138,7 @@ startContainer_ makeReq container = do
 
 containerStatus_ :: RequestBuilder -> ContainerId -> IO ContainerStatus
 containerStatus_ makeReq container = do
-    let parser = Aeson.withObject "contianer-inspect" $ \o -> do
+    let parser = Aeson.withObject "container-inspect" $ \o -> do
             state <- o .: "State"
             status <- state .: "Status"
             case status of
@@ -168,4 +182,21 @@ fetchLogs_ makeReq options = do
             <> timeStampToText options.until
     res <- HTTP.httpBS $ makeReq url
     pure $ HTTP.getResponseBody res
+
+-- Images
+
+pullImage_ :: RequestBuilder -> Image -> IO ()
+pullImage_ makeReq image = do
+    let url = "/images/create?fromImage="
+            <> image.name
+            <> "&tag="
+            <> image.tag
+    let req = makeReq url & HTTP.setRequestBody "POST"
+                         
+    void $ HTTP.httpBS req
+
+
+
+
+
 

@@ -7,11 +7,13 @@ import qualified RIO.Map as Map
 import qualified RIO.Set as Set
 import qualified System.Process.Typed as Process
 import Test.Hspec
+import qualified Data.Yaml as Yaml
 
 import Core
 import qualified Docker
 import qualified Runner
-import GHC.Base (build)
+import System.IO
+import Core (Build(pipeline))
 
 
 main :: IO ()
@@ -20,6 +22,8 @@ main = hspec do
     runner <- runIO $ Runner.createService docker
 
     beforeAll cleanupDocker $ describe "Quad CI" do
+        it "should decode pipelines" do
+            testYamlDecoding runner
         it "should run a build (success)" do
             testRunSuccess runner
         it "should run a build (failure)" do
@@ -28,6 +32,8 @@ main = hspec do
             testSharedWorkSpace docker runner
         it "should collect logs" do
             testLogCollection runner
+        it "should pull images" do
+            testImagePull runner
 
 cleanupDocker :: IO ()
 cleanupDocker = void do
@@ -40,7 +46,7 @@ makeStep :: Text -> Text -> [Text] -> Step
 makeStep name image commands
     = Step
         { name = StepName name
-        , image = Docker.Image image
+        , image = Docker.Image { name = image, tag = "latest" }
         , commands = NonEmpty.Partial.fromList commands
         }
 
@@ -71,6 +77,16 @@ testBuild = Build
 
 -- Tests
 
+testYamlDecoding :: Runner.Service -> IO ()
+testYamlDecoding runner = do
+    pipeline <- Yaml.decodeFileThrow "test/pipeline.sample.yaml"
+    build <- runner.prepareBuild pipeline
+    pipeline2  <- Yaml.decodeFileThrow "test/pipeline2.sample.yaml"
+    build2 <- runner.prepareBuild pipeline2
+    result2 <- runner.runBuild emptyHooks build2
+    build.state `shouldBe` BuildReady
+    length build.pipeline.steps `shouldBe` 2
+    result2.state `shouldBe` BuildFinished BuildSucceeded 
 
 testRunSuccess :: Runner.Service -> IO ()
 testRunSuccess runner = do
@@ -128,5 +144,17 @@ testLogCollection runner = do
     Map.elems result.completedSteps `shouldBe` [StepSucceeded, StepSucceeded ]
     readMVar expected >>= \logs -> logs `shouldBe` Set.empty
 
+testImagePull :: Runner.Service -> IO ()
+testImagePull runner = do
+    Process.readProcessStdout "docker rmi -f busybox"
+    -- Process.readProcessStdout "docker pull busybox"
 
+    build <- runner.prepareBuild $ makePipeline
+                [ makeStep "First step" "busybox" ["date"]
+                ]
+
+    result <- runner.runBuild emptyHooks build 
+
+    result.state `shouldBe` BuildFinished BuildSucceeded 
+    Map.elems result.completedSteps `shouldBe` [StepSucceeded]
 
