@@ -32,6 +32,7 @@ library
     , async
     , base
     , butcher
+    , bytestring
     , hslogger
     , http-client
     , http-conduit
@@ -68,6 +69,7 @@ executable quad
     , async
     , base
     , butcher
+    , bytestring
     , hslogger
     , http-client
     , http-conduit
@@ -106,6 +108,7 @@ test-suite quad-test
     , async
     , base
     , butcher
+    , bytestring
     , hslogger
     , hspec
     , http-client

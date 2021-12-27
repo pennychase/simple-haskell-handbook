@@ -81,12 +81,12 @@ testYamlDecoding :: Runner.Service -> IO ()
 testYamlDecoding runner = do
     pipeline <- Yaml.decodeFileThrow "test/pipeline.sample.yaml"
     build <- runner.prepareBuild pipeline
-    pipeline2  <- Yaml.decodeFileThrow "test/pipeline2.sample.yaml"
-    build2 <- runner.prepareBuild pipeline2
-    result2 <- runner.runBuild emptyHooks build2
+    --pipeline2  <- Yaml.decodeFileThrow "test/pipeline2.sample.yaml"
+    --build2 <- runner.prepareBuild pipeline2
+    --result2 <- runner.runBuild emptyHooks build
     build.state `shouldBe` BuildReady
     length build.pipeline.steps `shouldBe` 2
-    result2.state `shouldBe` BuildFinished BuildSucceeded 
+    --result2.state `shouldBe` BuildFinished BuildSucceeded 
 
 testRunSuccess :: Runner.Service -> IO ()
 testRunSuccess runner = do

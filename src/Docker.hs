@@ -3,6 +3,7 @@ module Docker where
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson.Types
 import Data.Aeson ( (.:) )
+import qualified Data.ByteString.Lazy as BL
 import qualified Network.HTTP.Simple as HTTP
 import qualified Socket
 import qualified Data.Time.Clock.POSIX as Time
@@ -10,7 +11,12 @@ import RIO
 import qualified RIO.Text as Text
 import qualified RIO.Text.Partial as Text.Partial
 
--- Data types for Dockewr services (containers, volumes, logs)
+-- Data types for Docker services (containers, volumes, logs)
+
+data Credentials = Credentials { username :: Text 
+                               , password :: Text 
+                               }
+                        deriving (Eq, Show, Generic, Aeson.ToJSON)
 
 data Image = Image { name :: Text
                    , tag :: Text }
@@ -191,9 +197,17 @@ pullImage_ makeReq image = do
             <> image.name
             <> "&tag="
             <> image.tag
-    let req = makeReq url & HTTP.setRequestBody "POST"
+
+    let creds = BL.toStrict $ Aeson.encode Credentials { username = "mpchase136"
+                                                       , password = "e1f5e67b-b557-4429-8597-4560e2e8014b"} 
+
+    let req = makeReq url & HTTP.setRequestHost "hub.docker.com"
+                          & HTTP.setRequestPort 443
+                          & HTTP.setRequestHeader "X-Registry-Auth" [creds]
+                          & HTTP.setRequestMethod "POST"
                          
     void $ HTTP.httpBS req
+
 
 
 
