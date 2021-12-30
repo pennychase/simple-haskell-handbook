@@ -1,5 +1,6 @@
 module Docker where
 
+import qualified Codec.Serialise as Serialise
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson.Types
 import Data.Aeson ( (.:) )
@@ -20,7 +21,7 @@ data Credentials = Credentials { username :: Text
 
 data Image = Image { name :: Text
                    , tag :: Text }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, Serialise.Serialise)
 
 imageToText :: Image -> Text 
 imageToText image = image.name <> ":" <> image.tag
@@ -32,14 +33,23 @@ instance Aeson.FromJSON Image where
             [name, tag] -> pure $ Image { name = name, tag = tag }
             _ -> fail $ "Image has too many colons " <> Text.unpack image
 
-newtype ContainerExitCode = ContainerExitCode { exitCodeToInt :: Int }
-    deriving (Eq, Show)
+newtype ContainerExitCode = ContainerExitCode Int
+    deriving (Eq, Show, Generic, Serialise.Serialise)
 
-newtype ContainerId = ContainerId { containerIdToText :: Text }
-    deriving (Eq, Show)
+exitCodeToInt :: ContainerExitCode -> Int
+exitCodeToInt (ContainerExitCode n) = n
 
-newtype Volume = Volume { volumeToText :: Text }
-    deriving (Eq, Show)
+newtype ContainerId = ContainerId Text
+    deriving (Eq, Show, Generic, Serialise.Serialise)
+
+containerIdToText :: ContainerId -> Text
+containerIdToText (ContainerId cid) = cid
+
+newtype Volume = Volume Text
+    deriving (Eq, Show, Generic, Serialise.Serialise)
+
+volumeToText :: Volume -> Text 
+volumeToText (Volume v) = v
 
 type RequestBuilder = Text -> HTTP.Request
 
