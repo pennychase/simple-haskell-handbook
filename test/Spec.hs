@@ -2,11 +2,14 @@ module Main where
 
 import RIO
 import qualified RIO.ByteString as ByteString
+import qualified RIO.HashMap as HashMap
 import qualified RIO.NonEmpty.Partial as NonEmpty.Partial
 import qualified RIO.Map as Map
 import qualified RIO.Set as Set
+import qualified Data.Aeson as Aeson
 import qualified Control.Concurrent.Async as Async
 import qualified Data.Yaml as Yaml
+import qualified Network.HTTP.Simple as HTTP
 import qualified System.Process.Typed as Process
 import Test.Hspec
 
@@ -19,13 +22,14 @@ import qualified JobHandler.Memory
 import qualified Runner
 import qualified Server
 
-
 main :: IO ()
 main = hspec do
     docker <- runIO Docker.createService
     runner <- runIO $ Runner.createService docker
 
     beforeAll cleanupDocker $ describe "Quad CI" do
+        it "should process webhooks" do
+            testWebhookTrigger runner
         it "should run server and agent" do
             testServerAndAgent runner
         it "should decode pipelines" do
@@ -79,6 +83,27 @@ checkBuild handler number = loop
                         _ -> loop 
                 _ -> loop
 
+runServerAndAgent :: (JobHandler.Service -> IO ()) -> Runner.Service -> IO ()
+runServerAndAgent callback runner = do
+
+    handler <- JobHandler.Memory.createService 
+
+    serverThread <- Async.async do
+        Server.run (Server.Config 9000) handler
+
+    Async.link serverThread
+
+    agentThread <- Async.async do
+        Agent.run (Agent.Config "http://localhost:9000") runner
+
+    Async.link agentThread
+
+    callback handler
+
+    Async.cancel serverThread
+    Async.cancel agentThread
+
+
 -- Test Values
 
 testPipeline :: Pipeline
@@ -95,55 +120,54 @@ testBuild = Build
     , volume = Docker.Volume ""
     }
 
+
 -- Tests
 
+testWebhookTrigger :: Runner.Service -> IO ()
+testWebhookTrigger = 
+    runServerAndAgent $ \handler -> do
+        base <- HTTP.parseRequest "http://localhost:9000"
+
+        let req = base
+                & HTTP.setRequestMethod "POST" 
+                & HTTP.setRequestPath "/webhook/github"
+                & HTTP.setRequestBodyFile "test/github-payload.sample.json"
+
+        res <- HTTP.httpBS req
+
+        --let Right (Aeson.Object build) = Aeson.eitherDecodeStrict $ HTTP.getResponseBody res
+        case Aeson.eitherDecodeStrict $ HTTP.getResponseBody res of
+            Right (Aeson.Object build) -> do
+                let Just (Aeson.Number number) = HashMap.lookup "number" build
+                checkBuild handler $ Core.BuildNumber (round number)
+            Left e -> throwString e
+
+
 testServerAndAgent :: Runner.Service -> IO ()
-testServerAndAgent runner = do
-    handler <- JobHandler.Memory.createService 
+testServerAndAgent  = 
+    runServerAndAgent $ \handler -> do  
 
-    serverThread <- Async.async do
-        Server.run (Server.Config 9000) handler
+        let pipeline = makePipeline
+                [ makeStep "agent-test" "busybox" ["echo hello", "echo from agent"]
+                ]
 
-    Async.link serverThread
-
-    agentThread <- Async.async do
-        Agent.run (Agent.Config "http://localhost:9000") runner
-
-    Async.link agentThread
-
-    let pipeline1 = makePipeline
-            [ makeStep "agent-test" "busybox" ["echo hello", "echo from agent"]
-            ]
-
-    let pipeline2 = makePipeline
-            [ makeStep "agent-test" "ubuntu" ["date", "echo from agent"]
-            ]
-
-    number1 <- handler.queueJob pipeline1
-    checkBuild handler number1
-
-    number2 <- handler.queueJob pipeline2
-    checkBuild handler number2
-
-    Async.cancel serverThread
-    Async.cancel agentThread
-
-    pure ()
+        number <- handler.queueJob pipeline
+        checkBuild handler number
 
 
 testYamlDecoding :: Runner.Service -> IO ()
 testYamlDecoding runner = do
-    -- Test complex pipeline for parsing
-    pipeline <- Yaml.decodeFileThrow "test/pipeline.sample.yaml"
+    pipeline  <- Yaml.decodeFileThrow "test/pipeline.sample.yaml"
     build <- runner.prepareBuild pipeline
-    -- Test simpler pipeline end-to-end
-    pipeline2  <- Yaml.decodeFileThrow "test/pipeline2.sample.yaml"
-    build2 <- runner.prepareBuild pipeline2
-    result2 <- runner.runBuild emptyHooks build2
-    -- The test results
-    build.state `shouldBe` BuildReady
-    length build.pipeline.steps `shouldBe` 2
-    result2.state `shouldBe` BuildFinished BuildSucceeded
+    result <- runner.runBuild emptyHooks build
+    result.state `shouldBe` BuildFinished BuildSucceeded
+    -- Test oringially failed because node image wasn't available (since updated pipeline)
+    -- So just ran prepareBuild and examined results to test parsing:
+    -- pipeline  <- Yaml.decodeFileThrow "test/pipeline.sample.yaml"
+    -- build <- runner.prepareBuild pipeline
+    -- build.state `shouldBe` BuildReady
+    -- length build.pipeline.steps `shouldBe` 2
+    
 
 testRunSuccess :: Runner.Service -> IO ()
 testRunSuccess runner = do
