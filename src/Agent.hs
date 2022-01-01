@@ -47,9 +47,13 @@ runCommand config runner = \case
                 , buildUpdated = \build -> do
                     sendMessage config $ BuildUpdated number build
                 }
+        let n = Core.displayBuildNumber number
+        Logger.infoM "quad.agenr" $ "Starting build " <> n
+
         build <- runner.prepareBuild pipeline
         void $ runner.runBuild hooks build 
 
+        Logger.infoM "quad.agenr" $ "Finished build " <> n
 
 sendMessage :: Config -> Msg -> IO ()
 sendMessage config msg = do
