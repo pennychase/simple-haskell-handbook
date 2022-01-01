@@ -104,23 +104,6 @@ runServerAndAgent callback runner = do
     Async.cancel agentThread
 
 
--- Test Values
-
-testPipeline :: Pipeline
-testPipeline = makePipeline
-    [ makeStep "First step" "ubuntu" ["date"]
-    , makeStep "Second step" "ubuntu" ["uname -r"]
-    ]
-
-testBuild :: Build
-testBuild = Build
-    { pipeline = testPipeline
-    , state = BuildReady
-    , completedSteps = mempty
-    , volume = Docker.Volume ""
-    }
-
-
 -- Tests
 
 testWebhookTrigger :: Runner.Service -> IO ()
@@ -150,8 +133,16 @@ testServerAndAgent  =
         let pipeline = makePipeline
                 [ makeStep "agent-test" "busybox" ["echo hello", "echo from agent"]
                 ]
+        let info =
+                JobHandler.CommitInfo 
+                    { sha = "00000"
+                    , branch = "main"
+                    , message = "test commit"
+                    , author = "quad"
+                    , repo = "quad-ci/quad"
+                    }  
 
-        number <- handler.queueJob pipeline
+        number <- handler.queueJob info pipeline
         checkBuild handler number
 
 
@@ -161,8 +152,8 @@ testYamlDecoding runner = do
     build <- runner.prepareBuild pipeline
     result <- runner.runBuild emptyHooks build
     result.state `shouldBe` BuildFinished BuildSucceeded
-    -- Test oringially failed because node image wasn't available (since updated pipeline)
-    -- So just ran prepareBuild and examined results to test parsing:
+    -- Test originally failed because node image wasn't available to be pulled
+    -- So I just ran prepareBuild and examined results to test parsing:
     -- pipeline  <- Yaml.decodeFileThrow "test/pipeline.sample.yaml"
     -- build <- runner.prepareBuild pipeline
     -- build.state `shouldBe` BuildReady
@@ -240,4 +231,22 @@ testImagePull runner = do
 
     result.state `shouldBe` BuildFinished BuildSucceeded 
     Map.elems result.completedSteps `shouldBe` [StepSucceeded]
+
+
+-- Test Values
+-- Used before implemented creating pipelines and builds
+
+testPipeline :: Pipeline
+testPipeline = makePipeline
+    [ makeStep "First step" "ubuntu" ["date"]
+    , makeStep "Second step" "ubuntu" ["uname -r"]
+    ]
+
+testBuild :: Build
+testBuild = Build
+    { pipeline = testPipeline
+    , state = BuildReady
+    , completedSteps = mempty
+    , volume = Docker.Volume ""
+    }
 

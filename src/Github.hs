@@ -2,6 +2,7 @@ module Github where
 
 import RIO
 import qualified RIO.NonEmpty.Partial as NonEmpty.Partial
+import qualified RIO.Text as Text
 import Data.Aeson((.:))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson.Types
@@ -17,10 +18,17 @@ parsePushEvent body = do
     let parser = Aeson.withObject "github-webhook" $ \event -> do
             commit <- event .: "head_commit"
             sha <- commit .: "id"
+            branch <- event .: "ref" <&> \ref ->
+                Text.dropPrefix "refs/heads/" ref
+            message <- commit .: "message"
+            author <- commit .: "author" >>= \a -> a .: "username"
             repo <- event .: "repository" >>= \r -> r .: "full_name"
 
             pure JobHandler.CommitInfo
                 { sha = sha
+                , branch = branch
+                , message = message
+                , author = author
                 , repo = repo
                 }
 

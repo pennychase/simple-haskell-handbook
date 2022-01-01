@@ -1,14 +1,16 @@
 module JobHandler where
 
 import RIO
-import Core
+import qualified Data.Aeson as Aeson
 
+import Core
 import qualified Agent
 
 data Job
     = Job 
         { pipeline :: Pipeline 
         , state :: JobState
+        , info :: CommitInfo
         }
         deriving (Eq, Show)
 
@@ -21,15 +23,20 @@ data JobState
 data CommitInfo
     = CommitInfo
         { sha :: Text 
+        , branch :: Text 
+        , message :: Text 
+        , author :: Text
         , repo :: Text 
         }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, Aeson.ToJSON)
 
 data Service 
     = Service
-        { queueJob :: Pipeline -> IO BuildNumber
+        { queueJob :: CommitInfo -> Pipeline -> IO BuildNumber
+        , findJob :: BuildNumber -> IO (Maybe Job)
         , dispatchCmd :: IO (Maybe Agent.Cmd)
         , processMsg :: Agent.Msg -> IO ()
-        , findJob :: BuildNumber -> IO (Maybe Job)
+        , fetchLogs :: BuildNumber -> StepName -> IO (Maybe ByteString)
+        , latestJobs :: IO [(BuildNumber, Job)]
         }
 

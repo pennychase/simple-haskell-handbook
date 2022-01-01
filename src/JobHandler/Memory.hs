@@ -26,8 +26,8 @@ createService = do
                 }
 
     pure JobHandler.Service
-        { queueJob = \pipeline -> STM.atomically do
-            STM.stateTVar state $ queueJob_ pipeline
+        { queueJob = \info pipeline -> STM.atomically do
+            STM.stateTVar state $ queueJob_ info pipeline
         , findJob = \number -> STM.atomically do
             s <- STM.readTVar state
             pure $ findJob_ number s
@@ -35,17 +35,24 @@ createService = do
             STM.stateTVar state dispatchCmd_
         , processMsg = \msg -> STM.atomically do
             STM.modifyTVar' state $ processMsg_ msg
+        , fetchLogs = \number step -> STM.atomically do
+            s <- STM.readTVar state
+            pure $ fetchLogs_ number step s
+        , latestJobs = STM.atomically do
+            s <- STM.readTVar state
+            pure $ latestJobs_ s
         }
    
 
-queueJob_ :: Pipeline -> State -> (BuildNumber, State)
-queueJob_ pipeline state =
+queueJob_ :: JobHandler.CommitInfo -> Pipeline -> State -> (BuildNumber, State)
+queueJob_ info pipeline state =
     (number, updatedState)
     where
         number = BuildNumber state.nextBuild 
         job = JobHandler.Job 
             { pipeline = pipeline 
             , state = JobHandler.JobQueued 
+            , info = info
             }
         updatedState =
             state 
@@ -80,6 +87,15 @@ processMsg_ msg state = case msg of
     Agent.LogCollected number log -> 
         let updatedLogs = Map.insertWith (flip mappend) (number, log.step) log.output state.logs
         in state{ logs = updatedLogs}
+
+fetchLogs_ :: BuildNumber -> StepName -> State -> Maybe ByteString 
+fetchLogs_ number step state =
+    Map.lookup (number, step) state.logs
+
+latestJobs_ :: State -> [(BuildNumber, JobHandler.Job)]
+latestJobs_ state = List.reverse $ Map.toList state.jobs
+
+
 
 
 
